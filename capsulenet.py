@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 Keras implementation of CapsNet in Hinton's paper Dynamic Routing Between Capsules.
 
@@ -9,18 +10,32 @@ Usage:
 
     
 """
+import os
+import numpy as np
+import pandas as pd
+np.random.seed(1337)
 
-from keras import layers, models
+from keras import layers, models, optimizers
 from keras import backend as K
 from capsulelayers import CapsuleLayer, PrimaryCap, Length, Mask
 from keras.preprocessing import sequence
+from keras.utils.vis_utils import plot_model
+from sklearn.model_selection import StratifiedShuffleSplit
 
-max_features = 5000
-maxlen = 400
-embed_dim = 50
+from metrics import margin_loss
 
+
+headers = ['partition','mcc','f1','sn','sp','acc','prec','tp','fp','tn', 'fn']   
+results = {'partition':[],'mcc':[],'f1':[],'sn':[],'sp':[],'acc':[],'prec':[],'tp':[],'fp':[],'tn':[],'fn':[]}
+
+max_features = 79
+maxlen = 16
+embed_dim = 16
 
 def CapsNet(input_shape, n_class, num_routing):
+    from keras import layers, models
+    from capsulelayers import CapsuleLayer, PrimaryCap, Length, Mask
+    from keras.preprocessing import sequence
     """
     A Capsule Network on MNIST.
     :param input_shape: data shape, 4d, [None, width, height, channels]
@@ -28,7 +43,7 @@ def CapsNet(input_shape, n_class, num_routing):
     :param num_routing: number of routing iterations
     :return: A Keras Model with 2 inputs and 2 outputs
     """
-    x = layers.Input(shape=(maxlen,))
+    x = layers.Input(shape=(maxlen,), dtype='int32')
     embed = layers.Embedding(max_features, embed_dim, input_length=maxlen)(x)
 
     conv1 = layers.Conv1D(filters=256, kernel_size=9, strides=1, padding='valid', activation='relu', name='conv1')(
@@ -55,21 +70,20 @@ def CapsNet(input_shape, n_class, num_routing):
     # two-input-two-output keras Model
     return models.Model([x, y], [out_caps, x_recon])
 
+def get_calls():
+    from keras import callbacks as C
+    calls = list()
+    calls.append( C.ModelCheckpoint(args.save_dir + '/weights-{epoch:02d}.h5', save_best_only=True, save_weights_only=True, verbose=1) )
+    calls.append( C.CSVLogger(args.save_dir + '/log.csv') )
+    calls.append( C.TensorBoard(log_dir=args.save_dir + '/tensorboard-logs/{}'.format(actual_partition), batch_size=args.batch_size, histogram_freq=args.debug) )
+    calls.append( C.EarlyStopping(monitor='val_loss', patience=5, verbose=0) )
+    calls.append( C.ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, min_lr=0.0001, verbose=0) )
+    calls.append( C.LearningRateScheduler(schedule=lambda epoch: args.lr * (args.lr_decay ** epoch)) )
+#    calls.append( C.LearningRateScheduler(schedule=lambda epoch: 0.001 * np.exp(-epoch / 10.)) )
+    return calls
 
-def margin_loss(y_true, y_pred):
-    """
-    Margin loss for Eq.(4). When y_true[i, :] contains not just one `1`, this loss should work too. Not test it.
-    :param y_true: [None, n_classes]
-    :param y_pred: [None, num_capsule]
-    :return: a scalar loss value.
-    """
-    L = y_true * K.square(K.maximum(0., 0.9 - y_pred)) + \
-        0.5 * (1 - y_true) * K.square(K.maximum(0., y_pred - 0.1))
-
-    return K.mean(K.sum(L, 1))
-
-
-def train(model, data, args):
+def train(model, data, args, actual_partition):
+    from keras import callbacks as C
     """
     Training a CapsuleNet
     :param model: the CapsuleNet model
@@ -81,101 +95,203 @@ def train(model, data, args):
     (x_train, y_train), (x_test, y_test) = data
 
     # callbacks
-    log = callbacks.CSVLogger(args.save_dir + '/log.csv')
-    tb = callbacks.TensorBoard(log_dir=args.save_dir + '/tensorboard-logs',
-                               batch_size=args.batch_size, histogram_freq=args.debug)
-    checkpoint = callbacks.ModelCheckpoint(args.save_dir + '/weights-{epoch:02d}.h5',
-                                           save_best_only=True, save_weights_only=True, verbose=1)
-    lr_decay = callbacks.LearningRateScheduler(schedule=lambda epoch: 0.001 * np.exp(-epoch / 10.))
+    calls = get_calls()
 
+    lossfunc = ['mse', 'binary_crossentropy']
     # compile the model
-    model.compile(optimizer='adam',
-                  loss=[margin_loss, 'mse'],
-                  loss_weights=[1., args.lam_recon],
-                  metrics={'out_caps': 'accuracy'})
 
-    model.fit([x_train, y_train], [y_train, x_train], batch_size=args.batch_size, epochs=args.epochs,
-              validation_data=[[x_test, y_test], [y_test, x_test]], callbacks=[log, tb, checkpoint], verbose=1)
+#    validation_data=[[x_test, y_test], [y_test, x_test]]
+#    validation_split=0.1
+    seeds = [23, 29, 31, 37, 41, 43, 47, 53, 59, 61]
+    for s in range(len(seeds)):
+        seed = seeds[s]
+        print('{} Train on seed {}'.format(s, seed))
+        
+        name = args.save_dir + '/org_{}-partition_{}-seed_{}-weights.h5'.format(args.organism, actual_partition, s)
+#        calls[0] = C.ModelCheckpoint(name + '-{epoch:02d}.h5', save_best_only=True, save_weights_only=True, verbose=1)
+        calls[0] = C.ModelCheckpoint(name, save_best_only=True, save_weights_only=True, verbose=1)
+        
+        model.compile(optimizer=optimizers.Adam(lr=args.lr),
+            loss=[margin_loss, lossfunc[0]],
+#            loss=lossfunc[0],
+            loss_weights=[1., args.lam_recon],
+            metrics=['accuracy']
+        )
 
-    model.save_weights(args.save_dir + '/trained_model.h5')
-    print('Trained model saved to \'%s/trained_model.h5\'' % args.save_dir)
+        kf = StratifiedShuffleSplit(n_splits=1, random_state=seed, test_size=0.1)
+        kf.get_n_splits(x_train, y_train)
 
-    from utils import plot_log
-    plot_log(args.save_dir + '/log.csv', show=True)
+        for t_index, v_index in kf.split(x_train, y_train):
+            
+            X_train, X_val = x_train[t_index], x_train[v_index]
+            Y_train, Y_val = y_train[t_index], y_train[v_index]
+            
+            val_data=[[X_val, Y_val], [Y_val, X_val]]
+            
+            model.fit([X_train, Y_train], [Y_train, X_train], batch_size=args.batch_size, epochs=args.epochs, validation_data=val_data, callbacks=calls, verbose=2)
+        
+#            model.save_weights(args.save_dir + '/trained_model.h5')
+#            print('Trained model saved to \'%s/trained_model.h5\'' % args.save_dir)
+
+#    from utils import plot_log
+#    plot_log(args.save_dir + '/log.csv', show=True)
 
     return model
 
 
 def test(model, data):
+    from ml_statistics import BaseStatistics
     x_test, y_test = data
-    y_pred, x_recon = model.predict([x_test, y_test], batch_size=100)
-    print('-' * 50)
-    print('Test acc:', np.sum(np.argmax(y_pred, 1) == np.argmax(y_test, 1)) / y_test.shape[0])
+    y_pred, x_recon = model.predict([x_test, y_test], batch_size=100)    
+    stats = BaseStatistics(y_test, y_pred)
+    return stats
 
-    import matplotlib.pyplot as plt
-    from utils import combine_images
-    from PIL import Image
+def load_dataset(organism):
+    from ml_data import SequenceNucsData
+    global max_features
+    global maxlen
+    
+    print('Load organism: {}'.format(organism))
+    npath, ppath = './fasta/{}_neg.fa'.format(organism), './fasta/{}_pos.fa'.format(organism)
+    print(npath, ppath)
+    
+    k = 2
+    max_features = 4**k
+    samples = SequenceNucsData(npath, ppath, k=k)
+    
+    X, y = samples.getX(), samples.getY()
+#    X = X.reshape(-1, 38, 79, 1).astype('float32')
+    X = X.astype('int32')
+    y = y.astype('int32')
+    print('Input Shapes\nX: {} | y: {}'.format(X.shape, y.shape))
+    maxlen = X.shape[1]
+    return X, y
 
-    img = combine_images(np.concatenate([x_test[:50], x_recon[:50]]))
-    image = img * 255
-    Image.fromarray(image.astype(np.uint8)).save("real_and_recon.png")
-    print()
-    print('Reconstructed images are saved to ./real_and_recon.png')
-    print('-' * 50)
-    plt.imshow(plt.imread("real_and_recon.png", ))
-    plt.show()
-
-
-def load_imdb(maxlen=400):
-    from keras.datasets import imdb
-
-    (x_train, y_train), (x_test, y_test) = imdb.load_data(num_words=max_features)
-    x_train = sequence.pad_sequences(x_train, maxlen=maxlen)
-    x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
+def load_partition(train_index, test_index, X, y):
+    x_train = X[train_index,:]
+    y_train = y[train_index]
+    
+    x_test = X[test_index,:]
+    y_test = y[test_index]
+    
+#    y_train = to_categorical(y_train.astype('float32'))
+#    y_test = to_categorical(y_test.astype('float32'))
+    
     return (x_train, y_train), (x_test, y_test)
 
 
-if __name__ == "__main__":
-    import numpy as np
-    import os
-    from keras import callbacks
-    from keras.utils.vis_utils import plot_model
+def get_best_weight(args):
+    # Select weights            
+    file_prefix = '{}'.format(args.organism)
+    file_sufix = 'weights.h5'
+    model_weights = [ x for x in os.listdir(args.save_dir+'/') if x.startswith(file_prefix) and x.endswith(file_sufix) ]
+    print 'Testing weigths', model_weights
+    best_mcc = -10000.0
+    selected_weight = None
+    selected_stats = None
+    
+    # Iterate over generated weights for this partition
+    for i in range(len(model_weights)):
+        
+        weight_file = model_weights[i]
+        
+        # Create new model to receive this weights
+        model = CapsNet(input_shape=x_train.shape, n_class=1, num_routing=args.num_routing)
+        model.load_weights(args.save_dir + '/' + weight_file)
+        
+        # Get statistics for model loaded with current weights
+        stats = test(model=model, data=(x_test, y_test))
+        print('MCC = {}'.format(stats.Mcc))
+        
+        # Get current best weigth
+        if best_mcc < stats.Mcc:
+            best_mcc = stats.Mcc
+            selected_weight = weight_file
+            selected_stats = stats
 
+        # Clear model
+        K.clear_session()
+
+    return (selected_stats, selected_weight)
+
+def allocate_stats(stats):
+    global results
+    
+    results['partition'].append(actual_partition)
+    results['mcc'].append(stats.Mcc)
+    results['f1'].append(stats.F1)
+    results['sn'].append(stats.Sn)
+    results['sp'].append(stats.Sp)
+    results['acc'].append(stats.Acc)
+    results['prec'].append(stats.Prec)
+    results['tp'].append(stats.tp)
+    results['fp'].append(stats.fp)
+    results['tn'].append(stats.tn)
+    results['fn'].append(stats.fn)
+
+def get_args(): 
     # setting the hyper parameters
     import argparse
-
+    
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_size', default=100, type=int)
-    parser.add_argument('--epochs', default=20, type=int)
-    parser.add_argument('--lam_recon', default=0.0005, type=float)
-    parser.add_argument('--num_routing', default=3, type=int)  # num_routing should > 0
-    parser.add_argument('--shift_fraction', default=0.1, type=float)
-    parser.add_argument('--debug', default=0, type=int)  # debug>0 will save weights by TensorBoard
+    parser.add_argument('--batch_size', default=32, type=int)
+    parser.add_argument('--epochs', default=300, type=int)
+    parser.add_argument('--lr', default=0.001, type=float, help="Initial learning rate")
+    parser.add_argument('--lr_decay', default=0.9, type=float, help="The value multiplied by lr at each epoch. Set a larger value for larger epochs")
+    parser.add_argument('--lam_recon', default=0.0005, type=float, help="The coefficient for the loss of decoder")
+    parser.add_argument('--num_routing', default=3, type=int, help="Number of iterations used in routing algorithm. should > 0")  # num_routing should > 0
+#    parser.add_argument('--shift_fraction', default=0.0, type=float, help="Fraction of pixels to shift at most in each direction.")
+    parser.add_argument('--debug', default=1, type=int)  # debug>0 will save weights by TensorBoard
     parser.add_argument('--save_dir', default='./result')
     parser.add_argument('--is_training', default=1, type=int)
     parser.add_argument('--weights', default=None)
-    args = parser.parse_args()
-    print(args)
+    parser.add_argument('-o', '--organism', default=None, help="The organism used for test. Generate auto path for fasta files. Should be specified when testing")
+    
+    args = parser.parse_args()    
+    return args
+    
+if __name__ == "__main__":
+    
+    args = get_args()
+
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
 
     # load data
-    (x_train, y_train), (x_test, y_test) = load_imdb()
-    print(x_train.shape)
-    print(y_train.shape)
-    # define model
-    model = CapsNet(input_shape=x_train.shape,
-                    n_class=1,
-                    num_routing=args.num_routing)
-    model.summary()
-    plot_model(model, to_file=args.save_dir + '/model.png', show_shapes=True)
+    X, y = load_dataset(args.organism)
+    
+#    (x_train, y_train), (x_test, y_test) = load_imdb()
 
-    # train or test
-    if args.weights is not None:  # init the model weights with provided one
-        model.load_weights(args.weights)
-    if args.is_training:
-        train(model=model, data=((x_train, y_train), (x_test, y_test)), args=args)
-    else:  # as long as weights are given, will run testing
-        if args.weights is None:
-            print('No weights are provided. Will test using random initialized weights.')
-        test(model=model, data=(x_test, y_test))
+    
+    kf = StratifiedShuffleSplit(n_splits=5, random_state=34267)
+    kf.get_n_splits(X, y)
+    
+    actual_partition = 0
+     
+    for train_index, test_index in kf.split(X, y):
+        actual_partition+=1
+        (x_train, y_train), (x_test, y_test) = load_partition(train_index, test_index, X, y)
+        print(x_train.shape)
+        print(y_train.shape)
+        
+        # Define model
+        model = CapsNet(input_shape=x_train.shape, n_class=1, num_routing=args.num_routing)
+        model.summary()
+#        plot_model(model, to_file=args.save_dir + '/model.png', show_shapes=True)
+        
+        # Train model and get weights
+        train(model=model, data=((x_train, y_train), (x_test, y_test)), args=args, actual_partition=actual_partition)
+        K.clear_session()
+        
+        # Select best weights for this partition
+        (stats, weight_file) = get_best_weight(args)                    
+        print('Selected BEST: {} ({})'.format(weight_file, stats.Mcc))
+#        model.save_weights(args.save_dir + '/best_trained_model_partition_{}.h5'.format(actual_partition) )
+#        print('Best Trained model for partition {} saved to \'%s/best_trained_model_partition_{}.h5\''.format(actual_partition, args.save_dir, actual_partition))
+        
+        # Allocate results of best weights for this partition
+        allocate_stats(stats)
+        
+    # Write results of partitions to CSV
+    df = pd.DataFrame(results, columns=headers)
+    df.to_csv('results_{}_{}'.format(args.organism, args.batch_size))
