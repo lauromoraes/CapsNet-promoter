@@ -76,7 +76,7 @@ def get_calls():
     calls.append( C.ModelCheckpoint(args.save_dir + '/weights-{epoch:02d}.h5', save_best_only=True, save_weights_only=True, verbose=1) )
     calls.append( C.CSVLogger(args.save_dir + '/log.csv') )
     calls.append( C.TensorBoard(log_dir=args.save_dir + '/tensorboard-logs/{}'.format(actual_partition), batch_size=args.batch_size, histogram_freq=args.debug) )
-    calls.append( C.EarlyStopping(monitor='val_loss', patience=5, verbose=0) )
+    calls.append( C.EarlyStopping(monitor='val_loss', patience=10, verbose=0) )
     calls.append( C.ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, min_lr=0.0001, verbose=0) )
     calls.append( C.LearningRateScheduler(schedule=lambda epoch: args.lr * (args.lr_decay ** epoch)) )
 #    calls.append( C.LearningRateScheduler(schedule=lambda epoch: 0.001 * np.exp(-epoch / 10.)) )
@@ -105,9 +105,9 @@ def train(model, data, args, actual_partition):
     seeds = [23, 29, 31, 37, 41, 43, 47, 53, 59, 61]
     for s in range(len(seeds)):
         seed = seeds[s]
-        print('{} Train on seed {}'.format(s, seed))
+        print('{} Train on SEED {}'.format(s, seed))
         
-        name = args.save_dir + '/org_{}-partition_{}-seed_{}-weights.h5'.format(args.organism, actual_partition, s)
+        name = args.save_dir + '/org_{}-batch_{}-partition_{}-seed_{}-weights.h5'.format(args.organism, args.batch_size, actual_partition, s)
 #        calls[0] = C.ModelCheckpoint(name + '-{epoch:02d}.h5', save_best_only=True, save_weights_only=True, verbose=1)
         calls[0] = C.ModelCheckpoint(name, save_best_only=True, save_weights_only=True, verbose=1)
         
@@ -129,7 +129,7 @@ def train(model, data, args, actual_partition):
             val_data=[[X_val, Y_val], [Y_val, X_val]]
             
             model.fit([X_train, Y_train], [Y_train, X_train], batch_size=args.batch_size, epochs=args.epochs, validation_data=val_data, callbacks=calls, verbose=2)
-        
+
 #            model.save_weights(args.save_dir + '/trained_model.h5')
 #            print('Trained model saved to \'%s/trained_model.h5\'' % args.save_dir)
 
@@ -180,15 +180,18 @@ def load_partition(train_index, test_index, X, y):
     return (x_train, y_train), (x_test, y_test)
 
 
-def get_best_weight(args):
+def get_best_weight(args, actual_partition):
     # Select weights            
-    file_prefix = '{}'.format(args.organism)
-    file_sufix = 'weights.h5'
+    file_prefix = 'org_{}-batch_{}-partition_{}'.format(args.organism, args.batch_size, actual_partition)
+    file_sufix = '-weights.h5'
     model_weights = [ x for x in os.listdir(args.save_dir+'/') if x.startswith(file_prefix) and x.endswith(file_sufix) ]
     print 'Testing weigths', model_weights
     best_mcc = -10000.0
     selected_weight = None
     selected_stats = None
+    
+    # Clear model
+    K.clear_session()
     
     # Iterate over generated weights for this partition
     for i in range(len(model_weights)):
@@ -208,9 +211,28 @@ def get_best_weight(args):
             best_mcc = stats.Mcc
             selected_weight = weight_file
             selected_stats = stats
+            print('Selected BEST')
+            print stats
 
         # Clear model
         K.clear_session()
+
+    # Persist best weights
+    model = CapsNet(input_shape=x_train.shape, n_class=1, num_routing=args.num_routing)
+    model.load_weights(args.save_dir + '/' + selected_weight)
+    model.save_weights(args.save_dir + '/org_{}-batch_{}-partition_{}-best_weights.h5'.format(args.organism, args.batch_size, actual_partition))
+    
+    K.clear_session()
+    
+    # Delete others weights
+    for i in range(len(model_weights)):
+        weight_file = model_weights[i]
+        print('Deleting weight: {}'.format(weight_file))
+        path = args.save_dir + '/' + weight_file
+        try:
+            os.remove(path)
+        except:
+            pass
 
     return (selected_stats, selected_weight)
 
@@ -270,6 +292,7 @@ if __name__ == "__main__":
      
     for train_index, test_index in kf.split(X, y):
         actual_partition+=1
+        print('>>> Testing PARTITION {}'.format(actual_partition))
         (x_train, y_train), (x_test, y_test) = load_partition(train_index, test_index, X, y)
         print(x_train.shape)
         print(y_train.shape)
@@ -284,7 +307,7 @@ if __name__ == "__main__":
         K.clear_session()
         
         # Select best weights for this partition
-        (stats, weight_file) = get_best_weight(args)                    
+        (stats, weight_file) = get_best_weight(args, actual_partition)                    
         print('Selected BEST: {} ({})'.format(weight_file, stats.Mcc))
 #        model.save_weights(args.save_dir + '/best_trained_model_partition_{}.h5'.format(actual_partition) )
 #        print('Best Trained model for partition {} saved to \'%s/best_trained_model_partition_{}.h5\''.format(actual_partition, args.save_dir, actual_partition))
