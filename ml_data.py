@@ -53,6 +53,9 @@ class BaseData(object):
         from numpy import vstack
         Y = array([0 for x in range(negdata.shape[0])] + [1 for x in range(posdata.shape[0])])
         #Y = Y.transpose()
+        self.neg = negdata
+        self.pos = posdata
+        
         X = vstack((negdata, posdata))
         assert X.shape[0]==Y.shape[0]
         self.X = X
@@ -81,8 +84,37 @@ class BaseData(object):
         return samples
     
     def set_data(self):
+#        import pandas as pd
+#        from sklearn.cluster import KMeans
+#        from sklearn.decomposition import PCA
+#        import numpy as np
+#        
         posdata = self.enconde_positives()
         negdata = self.enconde_negatives()
+#        
+#        D = pd.DataFrame(posdata)
+#        D_ =  D.iloc[:,59:61]
+#        
+#        pca = PCA(n_components=2)
+#        pca.fit(D_)
+#        existing_2d = pca.transform(D_)
+#        existing_df_2d = pd.DataFrame(existing_2d)
+#        existing_df_2d.index = D_.index
+#        existing_df_2d.columns = ['PC1','PC2']
+#        existing_df_2d.head()
+#        print existing_df_2d
+#        print(pca.explained_variance_ratio_) 
+#        
+#        
+#        kmeans = KMeans(n_clusters=3)
+#        clusters = kmeans.fit(D_)
+#        existing_df_2d['cluster'] = pd.Series(clusters.labels_, index=existing_df_2d.index)
+#        existing_df_2d.plot(
+#            kind='scatter',
+#            x='PC2',y='PC1',
+#            c=existing_df_2d.cluster.astype(np.float), 
+#            figsize=(16,8))
+        
         assert negdata.shape[1]==posdata.shape[1]
         self.n_samples_pos = posdata.shape[0]
         self.n_samples_neg = negdata.shape[0]
@@ -151,6 +183,7 @@ class SequenceProteinData(BaseData):
         from numpy import vstack
         return vstack([self.transform(self.get_kmers(seq, k=3)) for seq in seqs])
 
+
 # ================================================================
 # SequenceNucsData ===============================================
 # ================================================================
@@ -164,6 +197,14 @@ class SequenceNucsData(BaseData):
     def encode_sequences(self, seqs):
         from numpy import vstack
         return vstack([self.label_encoder.transform(self.get_kmers(seq, k=self.k)) for seq in seqs])
+#
+#npath = "fasta/Ecoli_neg.fa"
+#ppath = "fasta/Ecoli_pos.fa"
+#
+#
+#data = SequenceNucsData(npath, ppath, k=1)
+#X = data.getX()
+#Y = data.getY()
 
 # ================================================================
 # SequenceSimpleData =============================================

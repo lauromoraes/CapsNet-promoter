@@ -1,0 +1,178 @@
+Load organism: Bacillus
+('./fasta/Bacillus_neg.fa', './fasta/Bacillus_pos.fa')
+Input Shapes
+X: (1373, 51) | y: (1373,)
+>>> Testing PARTITION 1
+(1235, 51)
+(1235,)
+__________________________________________________________________________________________________
+Layer (type)                    Output Shape         Param #     Connected to                     
+==================================================================================================
+input_1 (InputLayer)            (None, 51)           0                                            
+__________________________________________________________________________________________________
+embedding_1 (Embedding)         (None, 51, 9)        36          input_1[0][0]                    
+__________________________________________________________________________________________________
+conv1 (Conv1D)                  (None, 43, 256)      20992       embedding_1[0][0]                
+__________________________________________________________________________________________________
+dropout_1 (Dropout)             (None, 43, 256)      0           conv1[0][0]                      
+__________________________________________________________________________________________________
+conv1d_1 (Conv1D)               (None, 18, 256)      590080      dropout_1[0][0]                  
+__________________________________________________________________________________________________
+reshape_1 (Reshape)             (None, 576, 8)       0           conv1d_1[0][0]                   
+__________________________________________________________________________________________________
+lambda_1 (Lambda)               (None, 576, 8)       0           reshape_1[0][0]                  
+__________________________________________________________________________________________________
+digitcaps (CapsuleLayer)        (None, 1, 16)        74304       lambda_1[0][0]                   
+__________________________________________________________________________________________________
+input_2 (InputLayer)            (None, 1)            0                                            
+__________________________________________________________________________________________________
+mask_1 (Mask)                   (None, 16)           0           digitcaps[0][0]                  
+                                                                 input_2[0][0]                    
+__________________________________________________________________________________________________
+dense_1 (Dense)                 (None, 512)          8704        mask_1[0][0]                     
+__________________________________________________________________________________________________
+dense_2 (Dense)                 (None, 1024)         525312      dense_1[0][0]                    
+__________________________________________________________________________________________________
+out_caps (Length)               (None, 1)            0           digitcaps[0][0]                  
+__________________________________________________________________________________________________
+dense_3 (Dense)                 (None, 51)           52275       dense_2[0][0]                    
+==================================================================================================
+Total params: 1,271,703
+Trainable params: 1,271,127
+Non-trainable params: 576
+__________________________________________________________________________________________________
+0 Train on SEED 23
+Epoch 00001: val_loss improved from inf to 0.04778, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_0-weights.h5
+Epoch 00002: val_loss improved from 0.04778 to 0.03384, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_0-weights.h5
+Epoch 00003: val_loss improved from 0.03384 to 0.00405, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_0-weights.h5
+Epoch 00004: val_loss did not improve
+Epoch 00005: val_loss did not improve
+Epoch 00006: val_loss did not improve
+Epoch 00007: val_loss did not improve
+Epoch 00008: val_loss did not improve
+Epoch 00009: val_loss did not improve
+Epoch 00010: val_loss did not improve
+Epoch 00011: val_loss did not improve
+Epoch 00012: val_loss did not improve
+Epoch 00013: val_loss did not improve
+1 Train on SEED 29
+Epoch 00001: val_loss improved from inf to 0.00396, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_1-weights.h5
+Epoch 00002: val_loss improved from 0.00396 to 0.00273, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_1-weights.h5
+Epoch 00003: val_loss did not improve
+Epoch 00004: val_loss did not improve
+Epoch 00005: val_loss improved from 0.00273 to 0.00240, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_1-weights.h5
+Epoch 00006: val_loss improved from 0.00240 to 0.00188, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_1-weights.h5
+Epoch 00007: val_loss did not improve
+Epoch 00008: val_loss did not improve
+Epoch 00009: val_loss did not improve
+Epoch 00010: val_loss did not improve
+Epoch 00011: val_loss did not improve
+Epoch 00012: val_loss did not improve
+Epoch 00013: val_loss did not improve
+Epoch 00014: val_loss did not improve
+Epoch 00015: val_loss did not improve
+Epoch 00016: val_loss did not improve
+2 Train on SEED 31
+Epoch 00001: val_loss improved from inf to 0.00106, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_2-weights.h5
+Epoch 00002: val_loss did not improve
+Epoch 00003: val_loss did not improve
+Epoch 00004: val_loss did not improve
+Epoch 00005: val_loss did not improve
+Epoch 00006: val_loss did not improve
+Epoch 00007: val_loss did not improve
+Epoch 00008: val_loss did not improve
+Epoch 00009: val_loss did not improve
+Epoch 00010: val_loss did not improve
+Epoch 00011: val_loss did not improve
+Testing weigths ['org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_0-weights.h5', 'org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_2-weights.h5', 'org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_1-weights.h5']
+MCC = 0.721370498851
+Selected BEST
+=================================================================
+tp    fp    tn    fn   
+36    18    83    1    
+_________________________________________________________________
+Prec  Sn    Sp    Acc   F1    Mcc  
+0.667 0.973 0.822 0.862 0.791 0.721
+=================================================================
+MCC = 0.781528412286
+Selected BEST
+=================================================================
+tp    fp    tn    fn   
+36    13    88    1    
+_________________________________________________________________
+Prec  Sn    Sp    Acc   F1    Mcc  
+0.735 0.973 0.871 0.899 0.837 0.782
+=================================================================
+MCC = 0.80315483975
+Selected BEST
+=================================================================
+tp    fp    tn    fn   
+33    7     94    4    
+_________________________________________________________________
+Prec  Sn    Sp    Acc   F1    Mcc  
+0.825 0.892 0.931 0.92  0.857 0.803
+=================================================================
+Deleting weight: org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_0-weights.h5
+Deleting weight: org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_2-weights.h5
+Deleting weight: org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_1-weights.h5
+Selected BEST: org_Bacillus-batch_8-emb_9-rout_3-partition_1-seed_1-weights.h5 (0.80315483975)
+>>> Testing PARTITION 2
+(1235, 51)
+(1235,)
+__________________________________________________________________________________________________
+Layer (type)                    Output Shape         Param #     Connected to                     
+==================================================================================================
+input_1 (InputLayer)            (None, 51)           0                                            
+__________________________________________________________________________________________________
+embedding_1 (Embedding)         (None, 51, 9)        36          input_1[0][0]                    
+__________________________________________________________________________________________________
+conv1 (Conv1D)                  (None, 43, 256)      20992       embedding_1[0][0]                
+__________________________________________________________________________________________________
+dropout_1 (Dropout)             (None, 43, 256)      0           conv1[0][0]                      
+__________________________________________________________________________________________________
+conv1d_1 (Conv1D)               (None, 18, 256)      590080      dropout_1[0][0]                  
+__________________________________________________________________________________________________
+reshape_1 (Reshape)             (None, 576, 8)       0           conv1d_1[0][0]                   
+__________________________________________________________________________________________________
+lambda_1 (Lambda)               (None, 576, 8)       0           reshape_1[0][0]                  
+__________________________________________________________________________________________________
+digitcaps (CapsuleLayer)        (None, 1, 16)        74304       lambda_1[0][0]                   
+__________________________________________________________________________________________________
+input_2 (InputLayer)            (None, 1)            0                                            
+__________________________________________________________________________________________________
+mask_1 (Mask)                   (None, 16)           0           digitcaps[0][0]                  
+                                                                 input_2[0][0]                    
+__________________________________________________________________________________________________
+dense_1 (Dense)                 (None, 512)          8704        mask_1[0][0]                     
+__________________________________________________________________________________________________
+dense_2 (Dense)                 (None, 1024)         525312      dense_1[0][0]                    
+__________________________________________________________________________________________________
+out_caps (Length)               (None, 1)            0           digitcaps[0][0]                  
+__________________________________________________________________________________________________
+dense_3 (Dense)                 (None, 51)           52275       dense_2[0][0]                    
+==================================================================================================
+Total params: 1,271,703
+Trainable params: 1,271,127
+Non-trainable params: 576
+__________________________________________________________________________________________________
+0 Train on SEED 23
+Epoch 00001: val_loss improved from inf to 0.05601, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_2-seed_0-weights.h5
+Epoch 00002: val_loss improved from 0.05601 to 0.01544, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_2-seed_0-weights.h5
+Epoch 00003: val_loss improved from 0.01544 to 0.01034, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_2-seed_0-weights.h5
+Epoch 00004: val_loss did not improve
+Epoch 00005: val_loss did not improve
+Epoch 00006: val_loss improved from 0.01034 to 0.00509, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_2-seed_0-weights.h5
+Epoch 00007: val_loss improved from 0.00509 to 0.00361, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_2-seed_0-weights.h5
+Epoch 00008: val_loss did not improve
+Epoch 00009: val_loss did not improve
+Epoch 00010: val_loss did not improve
+Epoch 00011: val_loss did not improve
+Epoch 00012: val_loss did not improve
+Epoch 00013: val_loss did not improve
+Epoch 00014: val_loss did not improve
+Epoch 00015: val_loss did not improve
+Epoch 00016: val_loss did not improve
+Epoch 00017: val_loss did not improve
+1 Train on SEED 29
+Epoch 00001: val_loss improved from inf to 0.00558, saving model to ./result/org_Bacillus-batch_8-emb_9-rout_3-partition_2-seed_1-weights.h5
+Epoch 00002: val_loss did not improve

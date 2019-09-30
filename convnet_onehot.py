@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 """
-Keras implementation of CapsNet in Hinton's paper Dynamic Routing Between Capsules.
+Keras implementation of ConvNet in Hinton's paper Dynamic Routing Between Capsules.
 
 Usage:
-       python CapsNet.py
-       python CapsNet.py --epochs 100
-       python CapsNet.py --epochs 100 --num_routing 3
+       python ConvNet.py
+       python ConvNet.py --epochs 100
+       python ConvNet.py --epochs 100 --num_routing 3
        ... ...
 
     
@@ -21,7 +21,6 @@ from capsulelayers import CapsuleLayer, PrimaryCap, Length, Mask
 from keras.preprocessing import sequence
 from keras.utils.vis_utils import plot_model
 from sklearn.model_selection import StratifiedShuffleSplit
-from keras.utils import plot_model
 
 from metrics import margin_loss
 
@@ -31,58 +30,48 @@ results = {'partition':[],'mcc':[],'f1':[],'sn':[],'sp':[],'acc':[],'prec':[],'t
 
 max_features = 79
 maxlen = 16
-embed_dim = 16
-
 prefix_name = ''
 
-def CapsNet(input_shape, n_class, num_routing):
+def ConvNet():
     from keras import layers, models
     from capsulelayers import CapsuleLayer, PrimaryCap, Length, Mask
     from keras.preprocessing import sequence
     """
     A Capsule Network on MNIST.
     :param input_shape: data shape, 4d, [None, width, height, channels]
-    :param n_class: number of classes
     :param num_routing: number of routing iterations
     :return: A Keras Model with 2 inputs and 2 outputs
     """
-    x = layers.Input(shape=(maxlen,), dtype='int32')
-    embed = layers.Embedding(max_features, embed_dim, input_length=maxlen)(x)
+    x = layers.Input(shape=(4, maxlen, 1), dtype='float32')
 
-    conv1 = layers.Conv1D(filters=256, kernel_size=9, strides=1, padding='valid', activation='relu', name='conv1')(
-        embed)
+    conv1 = layers.Conv2D(filters=args.num_kernel1, kernel_size=(4,args.kernel1_size), strides=(1,args.kernel1_stride), padding='valid', activation='relu', name='conv1')(x)
+    # drop1 = layers.Dropout(0.5)(conv1)
+    # pool1 = layers.MaxPooling1D(pool_size=args.pool1_size, strides=args.pool1_stride)(drop1)
+    pool1 = layers.MaxPooling2D(pool_size=(1,args.pool1_size), strides=(1,args.pool1_stride) )(conv1)
 
-    # Layer 2: Conv2D layer with `squash` activation, then reshape to [None, num_capsule, dim_vector]
-    primarycaps = PrimaryCap(conv1, dim_vector=8, n_channels=32, kernel_size=9, strides=2, padding='valid')
+    flat1 = layers.Flatten()(pool1)
 
-    # Layer 3: Capsule layer. Routing algorithm works here.
-    digitcaps = CapsuleLayer(num_capsule=n_class, dim_vector=16, num_routing=num_routing, name='digitcaps')(primarycaps)
+    dense1 = layers.Dense(128, activation='relu')(flat1)
+    # drop2 = layers.Dropout(0.1)(dense1)
+    # outputs = layers.Dense(1, activation='sigmoid')(drop2)
+    outputs = layers.Dense(1, activation='sigmoid')(dense1)
 
-    # Layer 4: This is an auxiliary layer to replace each capsule with its length. Just to match the true label's shape.
-    # If using tensorflow, this will not be necessary. :)
-    out_caps = Length(name='out_caps')(digitcaps)
-
-    # Decoder network.
-    y = layers.Input(shape=(n_class,))
-    masked = Mask()([digitcaps, y])  # The true label is used to mask the output of capsule layer.
-    x_recon = layers.Dense(512, activation='relu')(masked)
-    x_recon = layers.Dense(1024, activation='relu')(x_recon)
-    x_recon = layers.Dense(maxlen, activation='sigmoid')(x_recon)
-    # x_recon = layers.Reshape(target_shape=[1], name='out_recon')(x_recon)
-
-    # two-input-two-output keras Model
-    return models.Model([x, y], [out_caps, x_recon])
+    return models.Model(inputs=[x], outputs=outputs)
 
 def get_calls():
+
     from keras import callbacks as C
+    import math
+
+    cycles = 50
     calls = list()
     calls.append( C.ModelCheckpoint(args.save_dir + '/weights-{epoch:02d}.h5', save_best_only=True, save_weights_only=True, verbose=1) )
     calls.append( C.CSVLogger(args.save_dir + '/log.csv') )
     calls.append( C.TensorBoard(log_dir=args.save_dir + '/tensorboard-logs/{}'.format(actual_partition), batch_size=args.batch_size, histogram_freq=args.debug) )
     calls.append( C.EarlyStopping(monitor='val_loss', patience=10, verbose=0) )
-    calls.append( C.ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, min_lr=0.0001, verbose=0) )
-    calls.append( C.LearningRateScheduler(schedule=lambda epoch: args.lr * (args.lr_decay ** ((1+epoch)/10) )) )
-    # calls.append( C.LearningRateScheduler(schedule=lambda epoch: args.lr * (args.lr_decay ** epoch)) )
+#    calls.append( C.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=0.0001, verbose=0) )
+    calls.append( C.LearningRateScheduler(schedule=lambda epoch: args.lr * (args.lr_decay ** epoch)) )
+    # calls.append( C.LearningRateScheduler(schedule=lambda epoch: args.lr * math.cos(1+( (epoch-1 % (args.epochs/cycles)))/(args.epochs/cycles) ) ))	
 #    calls.append( C.LearningRateScheduler(schedule=lambda epoch: 0.001 * np.exp(-epoch / 10.)) )
     return calls
 
@@ -108,8 +97,10 @@ def train(model, data, args, actual_partition):
 
 #    validation_data=[[x_test, y_test], [y_test, x_test]]
 #    validation_split=0.1
-    seeds = [23, 29, 31, 37, 41, 43, 47, 53, 59, 61]
-    for s in range(args.num_seeds):
+#    seeds = [23, 29, 31, 37, 41, 43, 47, 53, 59, 61]
+    seeds = [23, 29, 31]
+#    seeds = [23, 29]
+    for s in range(len(seeds)):
         seed = seeds[s]
         print('{} Train on SEED {}'.format(s, seed))
         
@@ -118,9 +109,9 @@ def train(model, data, args, actual_partition):
         calls[0] = C.ModelCheckpoint(name, save_best_only=True, save_weights_only=True, verbose=1)
         
         model.compile(optimizer=optimizers.Adam(lr=args.lr),
-            loss=[margin_loss, lossfunc[1]],
+            loss=lossfunc[1],
 #            loss=lossfunc[0],
-            loss_weights=[1., args.lam_recon],
+            # loss_weights=[1., args.lam_recon],
             metrics=['accuracy']
         )
 
@@ -132,9 +123,9 @@ def train(model, data, args, actual_partition):
             X_train, X_val = x_train[t_index], x_train[v_index]
             Y_train, Y_val = y_train[t_index], y_train[v_index]
             
-            val_data=[[X_val, Y_val], [Y_val, X_val]]
+            val_data=(X_val, Y_val)
             
-            model.fit([X_train, Y_train], [Y_train, X_train], batch_size=args.batch_size, epochs=args.epochs, validation_data=val_data, callbacks=calls, verbose=2)
+            model.fit(x=X_train, y=Y_train, batch_size=args.batch_size, epochs=args.epochs, validation_data=val_data, callbacks=calls, verbose=2)
 
 #            model.save_weights(args.save_dir + '/trained_model.h5')
 #            print('Trained model saved to \'%s/trained_model.h5\'' % args.save_dir)
@@ -148,12 +139,13 @@ def train(model, data, args, actual_partition):
 def test(model, data):
     from ml_statistics import BaseStatistics
     x_test, y_test = data
-    y_pred, x_recon = model.predict([x_test, y_test], batch_size=100)    
+    Y = np.zeros(y_test.shape)
+    y_pred = model.predict(x=x_test, batch_size=8)
     stats = BaseStatistics(y_test, y_pred)
-    return stats
+    return stats, y_pred
 
 def load_dataset(organism):
-    from ml_data import SequenceNucsData, SequenceNucHotvector
+    from ml_data import SequenceNucsData, SequenceNucHotvector, SequenceMotifHot
     global max_features
     global maxlen
     
@@ -161,17 +153,19 @@ def load_dataset(organism):
     npath, ppath = './fasta/{}_neg.fa'.format(organism), './fasta/{}_pos.fa'.format(organism)
     print(npath, ppath)
     
-    k = 2
+    k = 1
     max_features = 4**k
-    samples = SequenceNucsData(npath, ppath, k=k)
-    # samples = SequenceNucHotvector(npath, ppath)
+    samples = SequenceNucHotvector(npath, ppath)
     
     X, y = samples.getX(), samples.getY()
 #    X = X.reshape(-1, 38, 79, 1).astype('float32')
     X = X.astype('int32')
+#     ini = 59
+# #    ini = 199
+#     X = X[:, (ini-30):(ini+11)]
     y = y.astype('int32')
     print('Input Shapes\nX: {} | y: {}'.format(X.shape, y.shape))
-    maxlen = X.shape[1]
+    maxlen = X.shape[2]
     return X, y
 
 def load_partition(train_index, test_index, X, y):
@@ -189,17 +183,19 @@ def load_partition(train_index, test_index, X, y):
 
 def get_best_weight(args, actual_partition):
     global prefix_name
-    # Select weights
+              
+    # Select weights 
     file_prefix = prefix_name+'-partition_{}'.format(actual_partition)
     file_sufix = '-weights.h5'
     model_weights = [ x for x in os.listdir(args.save_dir+'/') if x.startswith(file_prefix) and x.endswith(file_sufix) ]
-    print ('Testing weigths', model_weights)
+    print 'Testing weigths', model_weights
     best_mcc = -10000.0
     selected_weight = None
     selected_stats = None
     
     # Clear model
     K.clear_session()
+
     
     # Iterate over generated weights for this partition
     for i in range(len(model_weights)):
@@ -207,12 +203,11 @@ def get_best_weight(args, actual_partition):
         weight_file = model_weights[i]
         
         # Create new model to receive this weights
-        model = CapsNet(input_shape=x_train.shape, n_class=1, num_routing=args.num_routing)
-        # plot_model(model, to_file='model.png')
+        model = ConvNet()
         model.load_weights(args.save_dir + '/' + weight_file)
         
         # Get statistics for model loaded with current weights
-        stats = test(model=model, data=(x_test, y_test))
+        stats, y_pred = test(model=model, data=(x_test, y_test))
         print('MCC = {}'.format(stats.Mcc))
         
         # Get current best weigth
@@ -221,13 +216,13 @@ def get_best_weight(args, actual_partition):
             selected_weight = weight_file
             selected_stats = stats
             print('Selected BEST')
-            print(stats)
+            print stats
 
         # Clear model
         K.clear_session()
 
     # Persist best weights
-    model = CapsNet(input_shape=x_train.shape, n_class=1, num_routing=args.num_routing)
+    model = ConvNet()
     model.load_weights(args.save_dir + '/' + selected_weight)
     model.save_weights(args.save_dir + '/'+prefix_name+'-partition_{}-best_weights.h5'.format(actual_partition))
     
@@ -268,15 +263,17 @@ def get_args():
     parser.add_argument('--batch_size', default=32, type=int)
     parser.add_argument('--epochs', default=300, type=int)
     parser.add_argument('--partitions', default=5, type=int)
-    parser.add_argument('--num_seeds', default=3, type=int)
     parser.add_argument('--lr', default=0.001, type=float, help="Initial learning rate")
     parser.add_argument('--lr_decay', default=0.9, type=float, help="The value multiplied by lr at each epoch. Set a larger value for larger epochs")
-    parser.add_argument('--lam_recon', default=0.0005, type=float, help="The coefficient for the loss of decoder")
-    parser.add_argument('--num_routing', default=3, type=int, help="Number of iterations used in routing algorithm. should > 0")  # num_routing should > 0
+    parser.add_argument('--kernel1_size', default=3, type=int, help="Size of kernel of convolutional operation. Should > 0.")  # kernel1_size should > 0
+    parser.add_argument('--kernel1_stride', default=1, type=int, help="Stride length of convolutional operation. Should > 0.")  # kernel1_stride should > 0
+    parser.add_argument('--num_kernel1', default=256, type=int, help="Number of filters on convolutional operation. Should > 0.")  # num_kernel1 should > 0
+    parser.add_argument('--pool1_size', default=3, type=int, help="Size of pooling window. Should > 0.")  # pool1_size should > 0
+    parser.add_argument('--pool1_stride', default=1, type=int, help="Stride length of pooling window. Should > 0.")  # pool1_stride should > 0
 #    parser.add_argument('--shift_fraction', default=0.0, type=float, help="Fraction of pixels to shift at most in each direction.")
     parser.add_argument('--debug', default=1, type=int)  # debug>0 will save weights by TensorBoard
     parser.add_argument('--save_dir', default='./result')
-    parser.add_argument('--is_training', default=1, type=int)
+    parser.add_argument('--is_training', default=1, type=int, help="Size of embedding vector. Should > 0.")
     parser.add_argument('--weights', default=None)
     parser.add_argument('-o', '--organism', default=None, help="The organism used for test. Generate auto path for fasta files. Should be specified when testing")
     
@@ -284,12 +281,12 @@ def get_args():
     return args
     
 if __name__ == "__main__":
-
+    
     global prefix_name
     
     args = get_args()
 
-    prefix_name = 'capsnet_org_{}-rout_{}-lr_{}-dacay_{}-lam_{}-batch_{}-npartitions_{}-nseeds_{}'.format(args.organism, args.num_routing, args.lr, args.lr_decay, args.lam_recon, args.batch_size, args.partitions, args.num_seeds)
+    prefix_name = 'conv1_onehot_org_{}-batch_{}-kernel_{}-kernelsize_{}-pool_{}-npartitions_{}'.format(args.organism, args.batch_size, args.num_kernel1, args.kernel1_size, args.pool1_size, args.partitions)
 
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
@@ -313,9 +310,9 @@ if __name__ == "__main__":
         print(y_train.shape)
         
         # Define model
-        model = CapsNet(input_shape=x_train.shape, n_class=1, num_routing=args.num_routing)
+        model = ConvNet()
         model.summary()
-        # plot_model(model, to_file=args.save_dir + '/model.png', show_shapes=True)
+#        plot_model(model, to_file=args.save_dir + '/model.png', show_shapes=True)
         
         # Train model and get weights
         train(model=model, data=((x_train, y_train), (x_test, y_test)), args=args, actual_partition=actual_partition)
@@ -329,6 +326,8 @@ if __name__ == "__main__":
         
         # Allocate results of best weights for this partition
         allocate_stats(stats)
+        
+        # break
         
     # Write results of partitions to CSV
     df = pd.DataFrame(results, columns=headers)
